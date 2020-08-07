@@ -69,19 +69,25 @@ public class NamesrvStartup {
     }
 
     public static NamesrvController createNamesrvController(String[] args) throws IOException, JoranException {
+        // 设置当前rocketmq的版本
         System.setProperty(RemotingCommand.REMOTING_VERSION_KEY, Integer.toString(MQVersion.CURRENT_VERSION));
         //PackageConflictDetect.detectFastjson();
 
         Options options = ServerUtil.buildCommandlineOptions(new Options());
+        // 解析命令
         commandLine = ServerUtil.parseCmdLine("mqnamesrv", args, buildCommandlineOptions(options), new PosixParser());
         if (null == commandLine) {
             System.exit(-1);
             return null;
         }
 
+        // NameServer配置
         final NamesrvConfig namesrvConfig = new NamesrvConfig();
+        // NettyServer配置
         final NettyServerConfig nettyServerConfig = new NettyServerConfig();
+        // 设置NameServer的监听端口
         nettyServerConfig.setListenPort(9876);
+        // 解析出来的命令行是否有 -c参数  -c: 读取配置文件
         if (commandLine.hasOption('c')) {
             String file = commandLine.getOptionValue('c');
             if (file != null) {
@@ -137,12 +143,15 @@ public class NamesrvStartup {
             throw new IllegalArgumentException("NamesrvController is null");
         }
 
+        // NamesrvController初始化
         boolean initResult = controller.initialize();
+        // 初始化不成功, 把所有的资源释放掉
         if (!initResult) {
             controller.shutdown();
             System.exit(-3);
         }
 
+        // 关闭时的一个回调函数,优雅关闭
         Runtime.getRuntime().addShutdownHook(new ShutdownHookThread(log, new Callable<Void>() {
             @Override
             public Void call() throws Exception {

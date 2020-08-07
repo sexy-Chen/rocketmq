@@ -442,6 +442,7 @@ public class RouteInfoManager {
 
     public void onChannelDestroy(String remoteAddr, Channel channel) {
         String brokerAddrFound = null;
+        // 根据channel 查找brokerAddr
         if (channel != null) {
             try {
                 try {
@@ -463,6 +464,7 @@ public class RouteInfoManager {
             }
         }
 
+        // 没有找到brokerAddr, 根据传入的地址, 再一次清理broker的数据结构信息
         if (null == brokerAddrFound) {
             brokerAddrFound = remoteAddr;
         } else {
@@ -474,12 +476,15 @@ public class RouteInfoManager {
             try {
                 try {
                     this.lock.writeLock().lockInterruptibly();
+                    // 清除broker在brokerLiveTable的信息
                     this.brokerLiveTable.remove(brokerAddrFound);
+                    // 清除broker在filterServerTable的信息
                     this.filterServerTable.remove(brokerAddrFound);
                     String brokerNameFound = null;
                     boolean removeBrokerName = false;
                     Iterator<Entry<String, BrokerData>> itBrokerAddrTable =
                         this.brokerAddrTable.entrySet().iterator();
+                    // 根据brokerAddr寻找brokerName
                     while (itBrokerAddrTable.hasNext() && (null == brokerNameFound)) {
                         BrokerData brokerData = itBrokerAddrTable.next().getValue();
 
@@ -497,6 +502,7 @@ public class RouteInfoManager {
                             }
                         }
 
+                        //如果对应的brokerName再没有别的节点(即失去连接的节点是该brokerName拥有的唯一节点), 需要移除brokerName的信息
                         if (brokerData.getBrokerAddrs().isEmpty()) {
                             removeBrokerName = true;
                             itBrokerAddrTable.remove();
@@ -505,6 +511,7 @@ public class RouteInfoManager {
                         }
                     }
 
+                    // 在对应的cluster中移除brokerName信息
                     if (brokerNameFound != null && removeBrokerName) {
                         Iterator<Entry<String, Set<String>>> it = this.clusterAddrTable.entrySet().iterator();
                         while (it.hasNext()) {
@@ -527,6 +534,7 @@ public class RouteInfoManager {
                         }
                     }
 
+                    // 移除brokerName对应的queueData
                     if (removeBrokerName) {
                         Iterator<Entry<String, List<QueueData>>> itTopicQueueTable =
                             this.topicQueueTable.entrySet().iterator();
