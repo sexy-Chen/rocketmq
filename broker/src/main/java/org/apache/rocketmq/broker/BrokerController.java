@@ -231,6 +231,11 @@ public class BrokerController {
         return queryThreadPoolQueue;
     }
 
+    /**
+     * brokerController初始化
+     * @return
+     * @throws CloneNotSupportedException
+     */
     public boolean initialize() throws CloneNotSupportedException {
         boolean result = this.topicConfigManager.load();
 
@@ -240,6 +245,7 @@ public class BrokerController {
 
         if (result) {
             try {
+                // 核心服务
                 this.messageStore =
                     new DefaultMessageStore(this.messageStoreConfig, this.brokerStatsManager, this.messageArrivingListener,
                         this.brokerConfig);
@@ -261,6 +267,7 @@ public class BrokerController {
         result = result && this.messageStore.load();
 
         if (result) {
+            // 初始化一个服务端的NettyServer
             this.remotingServer = new NettyRemotingServer(this.nettyServerConfig, this.clientHousekeepingService);
             NettyServerConfig fastConfig = (NettyServerConfig) this.nettyServerConfig.clone();
             fastConfig.setListenPort(nettyServerConfig.getListenPort() - 2);
@@ -333,6 +340,7 @@ public class BrokerController {
 
             final long initialDelay = UtilAll.computeNextMorningTimeMillis() - System.currentTimeMillis();
             final long period = 1000 * 60 * 60 * 24;
+            // 定时记录Broker状态
             this.scheduledExecutorService.scheduleAtFixedRate(new Runnable() {
                 @Override
                 public void run() {
@@ -344,6 +352,7 @@ public class BrokerController {
                 }
             }, initialDelay, period, TimeUnit.MILLISECONDS);
 
+            // 定时持久化 offset 5s/次
             this.scheduledExecutorService.scheduleAtFixedRate(new Runnable() {
                 @Override
                 public void run() {
@@ -355,6 +364,7 @@ public class BrokerController {
                 }
             }, 1000 * 10, this.brokerConfig.getFlushConsumerOffsetInterval(), TimeUnit.MILLISECONDS);
 
+            // 定时持久化filter , 10s
             this.scheduledExecutorService.scheduleAtFixedRate(new Runnable() {
                 @Override
                 public void run() {
@@ -366,6 +376,7 @@ public class BrokerController {
                 }
             }, 1000 * 10, 1000 * 10, TimeUnit.MILLISECONDS);
 
+            // 对处理缓慢的 broker 做保持操作, 3m
             this.scheduledExecutorService.scheduleAtFixedRate(new Runnable() {
                 @Override
                 public void run() {
@@ -377,6 +388,7 @@ public class BrokerController {
                 }
             }, 3, 3, TimeUnit.MINUTES);
 
+            // 打印水位信息 1s
             this.scheduledExecutorService.scheduleAtFixedRate(new Runnable() {
                 @Override
                 public void run() {
@@ -479,8 +491,11 @@ public class BrokerController {
                     log.warn("FileWatchService created error, can't load the certificate dynamically");
                 }
             }
+            // 初始化事物管理器
             initialTransaction();
+            // acl权限管理
             initialAcl();
+            // 初始化rpchook
             initialRpcHooks();
         }
         return result;
@@ -543,6 +558,9 @@ public class BrokerController {
         }
     }
 
+    /**
+     * 将之前初始化的executor注册到相应的服务中
+     */
     public void registerProcessor() {
         /**
          * SendMessageProcessor
@@ -873,6 +891,7 @@ public class BrokerController {
             this.pullRequestHoldService.start();
         }
 
+        // 清理过期连接
         if (this.clientHousekeepingService != null) {
             this.clientHousekeepingService.start();
         }

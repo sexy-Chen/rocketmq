@@ -113,6 +113,11 @@ public class NamesrvStartup {
 
         MixAll.properties2Object(ServerUtil.commandLine2Properties(commandLine), namesrvConfig);
 
+        /**
+         * 在idea中手动执行rocketmq目录,启动时需要读取该目录下的配置文件
+         */
+        namesrvConfig.setRocketmqHome("/Users/bjhl/sourceCode/rocketmq/distribution");
+
         if (null == namesrvConfig.getRocketmqHome()) {
             System.out.printf("Please set the %s variable in your environment to match the location of the RocketMQ installation%n", MixAll.ROCKETMQ_HOME_ENV);
             System.exit(-2);

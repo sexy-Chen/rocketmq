@@ -90,9 +90,13 @@ public class IndexFile {
     }
 
     public boolean putKey(final String key, final long phyOffset, final long storeTimestamp) {
+        // 当前已使用的条目 >= 允许最大条目数时,返回false -- 当前index文件已经写满
         if (this.indexHeader.getIndexCount() < this.indexNum) {
+            // 计算hash
             int keyHash = indexKeyHashMethod(key);
+            // 计算槽位
             int slotPos = keyHash % this.hashSlotNum;
+            // 计算hashcode对应hash槽的物理地址
             int absSlotPos = IndexHeader.INDEX_HEADER_SIZE + slotPos * hashSlotSize;
 
             FileLock fileLock = null;
@@ -101,11 +105,13 @@ public class IndexFile {
 
                 // fileLock = this.fileChannel.lock(absSlotPos, hashSlotSize,
                 // false);
+                // hash槽中存储的数据, <= 0 或者 > 当前索引文件索引条目格式,则设置值为0
                 int slotValue = this.mappedByteBuffer.getInt(absSlotPos);
                 if (slotValue <= invalidIndex || slotValue > this.indexHeader.getIndexCount()) {
                     slotValue = invalidIndex;
                 }
 
+                // 计算待存储消息的时间戳和 第一条消息时间戳的差值,并换算成秒
                 long timeDiff = storeTimestamp - this.indexHeader.getBeginTimestamp();
 
                 timeDiff = timeDiff / 1000;
@@ -118,10 +124,13 @@ public class IndexFile {
                     timeDiff = 0;
                 }
 
+                // 将条目存储在indexFile
+                // 计算新家条目的起始物理偏移量
                 int absIndexPos =
                     IndexHeader.INDEX_HEADER_SIZE + this.hashSlotNum * hashSlotSize
                         + this.indexHeader.getIndexCount() * indexSize;
 
+                // 存储 hashcode 消息物理偏移量 消息的存储时间戳 索引文件的时间戳 当前的hash槽的值 到mappedByteBuffer
                 this.mappedByteBuffer.putInt(absIndexPos, keyHash);
                 this.mappedByteBuffer.putLong(absIndexPos + 4, phyOffset);
                 this.mappedByteBuffer.putInt(absIndexPos + 4 + 8, (int) timeDiff);
@@ -129,6 +138,7 @@ public class IndexFile {
 
                 this.mappedByteBuffer.putInt(absSlotPos, this.indexHeader.getIndexCount());
 
+                // 更新文件索引头信息,当前文件只包含一个条目,更新beginPhyOffset 和 beginTimestamp...
                 if (this.indexHeader.getIndexCount() <= 1) {
                     this.indexHeader.setBeginPhyOffset(phyOffset);
                     this.indexHeader.setBeginTimestamp(storeTimestamp);
@@ -188,11 +198,23 @@ public class IndexFile {
         return result;
     }
 
+    /**
+     *
+     * @param phyOffsets 查找的消息物理偏移量
+     * @param key 索引key
+     * @param maxNum 本次查找的最大消息数
+     * @param begin 开始时间戳
+     * @param end 结束时间戳
+     * @param lock
+     */
     public void selectPhyOffset(final List<Long> phyOffsets, final String key, final int maxNum,
         final long begin, final long end, boolean lock) {
         if (this.mappedFile.hold()) {
+            // 计算key的hash
             int keyHash = indexKeyHashMethod(key);
+            // 定位hash槽
             int slotPos = keyHash % this.hashSlotNum;
+            // hashcode对应的槽的物理地址
             int absSlotPos = IndexHeader.INDEX_HEADER_SIZE + slotPos * hashSlotSize;
 
             FileLock fileLock = null;
@@ -208,14 +230,18 @@ public class IndexFile {
                 // fileLock = null;
                 // }
 
+                // 对应的hash槽存储的数据 < 1 或大于当前索引条目个数 则表示hashcode没有对应的条目
                 if (slotValue <= invalidIndex || slotValue > this.indexHeader.getIndexCount()
                     || this.indexHeader.getIndexCount() <= 1) {
                 } else {
+                    // 由于hash冲突,根据slotValue定位该hash槽最新的Item条目,将存储的物理偏移量加入到phyOffset中,
+                    // 然后继续验证Item条目中存储的饿上一个Index下标, >= 1 && 小于最大条目,继续查找,否则结束查找
                     for (int nextIndexToRead = slotValue; ; ) {
                         if (phyOffsets.size() >= maxNum) {
                             break;
                         }
 
+                        // 根据index下标定位到条目的起始物理偏移量,然后依次读取hashcode,物理偏移量,时间差和上一个条目的index下标
                         int absIndexPos =
                             IndexHeader.INDEX_HEADER_SIZE + this.hashSlotNum * hashSlotSize
                                 + nextIndexToRead * indexSize;
@@ -226,6 +252,7 @@ public class IndexFile {
                         long timeDiff = (long) this.mappedByteBuffer.getInt(absIndexPos + 4 + 8);
                         int prevIndexRead = this.mappedByteBuffer.getInt(absIndexPos + 4 + 8 + 4);
 
+                        // 存储的时间查 < 0 直接结束查找
                         if (timeDiff < 0) {
                             break;
                         }

@@ -79,16 +79,17 @@ public class NamesrvController {
         // 简单理解为 namespace为key的一个kv结构
         this.kvConfigManager.load();
 
-        // 启动一个NettyRemotingServer实例
+        // 启动一个NettyRemotingServer实例, 并监听
         this.remotingServer = new NettyRemotingServer(this.nettyServerConfig, this.brokerHousekeepingService);
 
+        // 创建远程连接的线程池
         this.remotingExecutor =
             Executors.newFixedThreadPool(nettyServerConfig.getServerWorkerThreads(), new ThreadFactoryImpl("RemotingExecutorThread_"));
 
         // 注册处理请求的processor
         this.registerProcessor();
 
-        // 清理不活跃的broker
+        // 清理不活跃的broker,每10s清理一次
         this.scheduledExecutorService.scheduleAtFixedRate(new Runnable() {
 
             @Override
@@ -97,7 +98,7 @@ public class NamesrvController {
             }
         }, 5, 10, TimeUnit.SECONDS);
 
-        // 这个好像没有什么实际的功能, 就定期的打印一些乱七八糟的玩意儿
+        // 每10s读取一次config文件,打印一些乱七八糟的玩意儿
         this.scheduledExecutorService.scheduleAtFixedRate(new Runnable() {
 
             @Override

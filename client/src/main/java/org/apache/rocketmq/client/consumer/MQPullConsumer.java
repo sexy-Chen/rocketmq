@@ -39,6 +39,7 @@ public interface MQPullConsumer extends MQConsumer {
 
     /**
      * Register the message queue listener
+     * 注册消息队列的监听器
      */
     void registerMessageQueueListener(final String topic, final MessageQueueListener listener);
 
@@ -157,8 +158,8 @@ public interface MQPullConsumer extends MQConsumer {
 
     /**
      * Fetch the message queues according to the topic
-     *
-     * @param topic message topic
+     * 获取消费者对主题topic分配了哪些队列
+     * @param topic message topic 主题
      * @return message queue set
      */
     Set<MessageQueue> fetchMessageQueuesInBalance(final String topic) throws MQClientException;

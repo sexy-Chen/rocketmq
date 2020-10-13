@@ -87,6 +87,11 @@ public class BrokerStartup {
         }
     }
 
+    /**
+     * 类比NameSrv的Controller,这里就是初始化一个brokerController
+     * @param args
+     * @return
+     */
     public static BrokerController createBrokerController(String[] args) {
         System.setProperty(RemotingCommand.REMOTING_VERSION_KEY, Integer.toString(MQVersion.CURRENT_VERSION));
 
@@ -100,7 +105,9 @@ public class BrokerStartup {
 
         try {
             //PackageConflictDetect.detectFastjson();
+            // 添加一些默认的配置项 -h, -n 等命令参数
             Options options = ServerUtil.buildCommandlineOptions(new Options());
+            // 解析命令
             commandLine = ServerUtil.parseCmdLine("mqbroker", args, buildCommandlineOptions(options),
                 new PosixParser());
             if (null == commandLine) {
@@ -114,13 +121,14 @@ public class BrokerStartup {
             nettyClientConfig.setUseTLS(Boolean.parseBoolean(System.getProperty(TLS_ENABLE,
                 String.valueOf(TlsSystemConfig.tlsMode == TlsMode.ENFORCING))));
             nettyServerConfig.setListenPort(10911);
+            // 初始化存储服务配置, 如文件的位置和刷盘频率(MessageStoreConfig 包含了对消息文件的所有配置和定义)
             final MessageStoreConfig messageStoreConfig = new MessageStoreConfig();
 
             if (BrokerRole.SLAVE == messageStoreConfig.getBrokerRole()) {
                 int ratio = messageStoreConfig.getAccessMessageInMemoryMaxRatio() - 10;
                 messageStoreConfig.setAccessMessageInMemoryMaxRatio(ratio);
             }
-
+            // -c + conf   是否只用自定义配置,使用了会覆盖默认配置
             if (commandLine.hasOption('c')) {
                 String file = commandLine.getOptionValue('c');
                 if (file != null) {
@@ -142,11 +150,17 @@ public class BrokerStartup {
 
             MixAll.properties2Object(ServerUtil.commandLine2Properties(commandLine), brokerConfig);
 
+            /**
+             * 在idea中手动执行rocketmq目录,启动时需要读取该目录下的配置文件
+             */
+            brokerConfig.setRocketmqHome("/Users/bjhl/sourceCode/rocketmq/distribution");
+
             if (null == brokerConfig.getRocketmqHome()) {
                 System.out.printf("Please set the %s variable in your environment to match the location of the RocketMQ installation", MixAll.ROCKETMQ_HOME_ENV);
                 System.exit(-2);
             }
 
+            // 校验和处理namesrvAddr
             String namesrvAddr = brokerConfig.getNamesrvAddr();
             if (null != namesrvAddr) {
                 try {
@@ -182,6 +196,7 @@ public class BrokerStartup {
                 brokerConfig.setBrokerId(-1);
             }
 
+            // 高可用,在普通的监听端口上+1
             messageStoreConfig.setHaListenPort(nettyServerConfig.getListenPort() + 1);
             LoggerContext lc = (LoggerContext) LoggerFactory.getILoggerFactory();
             JoranConfigurator configurator = new JoranConfigurator();
@@ -211,6 +226,7 @@ public class BrokerStartup {
             MixAll.printObjectProperties(log, nettyClientConfig);
             MixAll.printObjectProperties(log, messageStoreConfig);
 
+            // 创建一个 BrokerController 实例
             final BrokerController controller = new BrokerController(
                 brokerConfig,
                 nettyServerConfig,
@@ -225,6 +241,7 @@ public class BrokerStartup {
                 System.exit(-3);
             }
 
+            // 服务终止时的一个回调函数
             Runtime.getRuntime().addShutdownHook(new Thread(new Runnable() {
                 private volatile boolean hasShutdown = false;
                 private AtomicInteger shutdownTimes = new AtomicInteger(0);

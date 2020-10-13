@@ -24,10 +24,14 @@ import org.apache.rocketmq.common.protocol.route.QueueData;
 import org.apache.rocketmq.common.protocol.route.TopicRouteData;
 
 public class TopicPublishInfo {
+    // 是否为顺序消息
     private boolean orderTopic = false;
     private boolean haveTopicRouterInfo = false;
+    // 该topic的消息队列
     private List<MessageQueue> messageQueueList = new ArrayList<MessageQueue>();
+    // 发送消息时候 +1 用于负载均衡的时候选择队列
     private volatile ThreadLocalIndex sendWhichQueue = new ThreadLocalIndex();
+    // topic的路由信息
     private TopicRouteData topicRouteData;
 
     public boolean isOrderTopic() {
@@ -66,12 +70,20 @@ public class TopicPublishInfo {
         this.haveTopicRouterInfo = haveTopicRouterInfo;
     }
 
+    /**
+     * sendLatencyFaultEnable = false 不启用broker的故障延时机制
+     * @param lastBrokerName
+     * @return
+     */
     public MessageQueue selectOneMessageQueue(final String lastBrokerName) {
+        // lastBrokerName 上次选择的执行发送消息失败的broker
         if (lastBrokerName == null) {
+            // 上次发送消息失败了,规避上次messageQueue的broker
             return selectOneMessageQueue();
         } else {
             int index = this.sendWhichQueue.getAndIncrement();
             for (int i = 0; i < this.messageQueueList.size(); i++) {
+                // 当前路由表中的队列个数取模
                 int pos = Math.abs(index++) % this.messageQueueList.size();
                 if (pos < 0)
                     pos = 0;

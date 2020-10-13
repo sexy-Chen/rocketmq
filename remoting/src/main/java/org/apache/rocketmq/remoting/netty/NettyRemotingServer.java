@@ -195,6 +195,7 @@ public class NettyRemotingServer extends NettyRemotingAbstract implements Remoti
 
         prepareSharableHandlers();
 
+        // 典型的一个netty服务端代码
         ServerBootstrap childHandler =
             this.serverBootstrap.group(this.eventLoopGroupBoss, this.eventLoopGroupSelector)
                 .channel(useEpoll() ? EpollServerSocketChannel.class : NioServerSocketChannel.class)
@@ -236,6 +237,7 @@ public class NettyRemotingServer extends NettyRemotingAbstract implements Remoti
             this.nettyEventExecutor.start();
         }
 
+        // 定时扫描和终止已过期任务
         this.timer.scheduleAtFixedRate(new TimerTask() {
 
             @Override

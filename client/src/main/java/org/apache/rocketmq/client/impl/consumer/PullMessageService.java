@@ -27,6 +27,11 @@ import org.apache.rocketmq.common.ServiceThread;
 import org.apache.rocketmq.logging.InternalLogger;
 import org.apache.rocketmq.common.utils.ThreadUtils;
 
+/**
+ * PullMessageService 负责对消息队列进行消息拉取,从远端服务器拉取消息后将消息存入ProcessQueue消息队列处理队列中
+ * 调用ConsumeMessageService#submitConsumeRequest方法进行消费,使用消费线程消费,确保消息拉取与消息消费的解藕
+ * RocketMQ使用ConsumeMessageService来实现消息消费的处理逻辑
+ */
 public class PullMessageService extends ServiceThread {
     private final InternalLogger log = ClientLogger.getLog();
     private final LinkedBlockingQueue<PullRequest> pullRequestQueue = new LinkedBlockingQueue<PullRequest>();
@@ -76,9 +81,11 @@ public class PullMessageService extends ServiceThread {
         return scheduledExecutorService;
     }
 
+    // 根据消费组名,从MQClientInstance中获取消费者内部实现类MQConsumerInner
     private void pullMessage(final PullRequest pullRequest) {
         final MQConsumerInner consumer = this.mQClientFactory.selectConsumer(pullRequest.getConsumerGroup());
         if (consumer != null) {
+            // 强转之后只为push模式使用
             DefaultMQPushConsumerImpl impl = (DefaultMQPushConsumerImpl) consumer;
             impl.pullMessage(pullRequest);
         } else {
@@ -92,7 +99,9 @@ public class PullMessageService extends ServiceThread {
 
         while (!this.isStopped()) {
             try {
+                // 获取一个拉消息任务 -- pullRequestQueue为阻塞队列,当没有任务的时候会被阻塞
                 PullRequest pullRequest = this.pullRequestQueue.take();
+                // 消息拉取
                 this.pullMessage(pullRequest);
             } catch (InterruptedException ignored) {
             } catch (Exception e) {

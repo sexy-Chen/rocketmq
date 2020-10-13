@@ -165,6 +165,7 @@ public abstract class AbstractSendMessageProcessor extends AsyncNettyRequestProc
 
     protected RemotingCommand msgCheck(final ChannelHandlerContext ctx,
         final SendMessageRequestHeader requestHeader, final RemotingCommand response) {
+        // 检验broker是否有写权限
         if (!PermName.isWriteable(this.brokerController.getBrokerConfig().getBrokerPermission())
             && this.brokerController.getTopicConfigManager().isOrderTopic(requestHeader.getTopic())) {
             response.setCode(ResponseCode.NO_PERMISSION);
@@ -216,6 +217,7 @@ public abstract class AbstractSendMessageProcessor extends AsyncNettyRequestProc
             }
         }
 
+        // 校验队列是否合法
         int queueIdInt = requestHeader.getQueueId();
         int idValid = Math.max(topicConfig.getWriteQueueNums(), topicConfig.getReadQueueNums());
         if (queueIdInt >= idValid) {

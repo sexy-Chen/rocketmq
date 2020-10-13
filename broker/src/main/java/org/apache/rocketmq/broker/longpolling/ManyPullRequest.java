@@ -30,6 +30,11 @@ public class ManyPullRequest {
         this.pullRequestList.addAll(many);
     }
 
+    /**
+     * 从ManyPullRequest中获取当前主题、队列所有挂起的 拉取任务。使用synchronized --- 虽然PullRequestHoldService是线程私有的,
+     * 但是ReputMessage内部持有PullRequestHoldService,会唤醒挂起线程执行消息尝试拉取
+     * @return
+     */
     public synchronized List<PullRequest> cloneListAndClear() {
         if (!this.pullRequestList.isEmpty()) {
             List<PullRequest> result = (ArrayList<PullRequest>) this.pullRequestList.clone();

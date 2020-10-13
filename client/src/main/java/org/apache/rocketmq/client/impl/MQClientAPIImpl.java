@@ -710,6 +710,7 @@ public class MQClientAPIImpl {
         final CommunicationMode communicationMode,
         final PullCallback pullCallback
     ) throws RemotingException, MQBrokerException, InterruptedException {
+        // 拼装请求
         RemotingCommand request = RemotingCommand.createRequestCommand(RequestCode.PULL_MESSAGE, requestHeader);
 
         switch (communicationMode) {
@@ -720,6 +721,7 @@ public class MQClientAPIImpl {
                 this.pullMessageAsync(addr, request, timeoutMillis, pullCallback);
                 return null;
             case SYNC:
+                // 向服务端发起请求
                 return this.pullMessageSync(addr, request, timeoutMillis);
             default:
                 assert false;
@@ -766,6 +768,7 @@ public class MQClientAPIImpl {
         final RemotingCommand request,
         final long timeoutMillis
     ) throws RemotingException, InterruptedException, MQBrokerException {
+        // 同步请求
         RemotingCommand response = this.remotingClient.invokeSync(addr, request, timeoutMillis);
         assert response != null;
         return this.processPullResponse(response);
@@ -795,6 +798,7 @@ public class MQClientAPIImpl {
         PullMessageResponseHeader responseHeader =
             (PullMessageResponseHeader) response.decodeCommandCustomHeader(PullMessageResponseHeader.class);
 
+        // 根据响应结果解码成 -- pullResultExt, 只是从网络中读取消息列表的byte[] messageBinary
         return new PullResultExt(pullStatus, responseHeader.getNextBeginOffset(), responseHeader.getMinOffset(),
             responseHeader.getMaxOffset(), null, responseHeader.getSuggestWhichBrokerId(), response.getBody());
     }

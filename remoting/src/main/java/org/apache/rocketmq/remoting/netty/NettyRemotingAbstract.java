@@ -378,6 +378,7 @@ public abstract class NettyRemotingAbstract {
     /**
      * <p>
      * This method is periodically invoked to scan and expire deprecated request.
+     * 定期扫描和终止已过期的任务
      * </p>
      */
     public void scanResponseTable() {
@@ -413,6 +414,7 @@ public abstract class NettyRemotingAbstract {
             final ResponseFuture responseFuture = new ResponseFuture(channel, opaque, timeoutMillis, null, null);
             this.responseTable.put(opaque, responseFuture);
             final SocketAddress addr = channel.remoteAddress();
+            // 发送消息并设置回调监听
             channel.writeAndFlush(request).addListener(new ChannelFutureListener() {
                 @Override
                 public void operationComplete(ChannelFuture f) throws Exception {
@@ -430,6 +432,7 @@ public abstract class NettyRemotingAbstract {
                 }
             });
 
+            // 超时等待
             RemotingCommand responseCommand = responseFuture.waitResponse(timeoutMillis);
             if (null == responseCommand) {
                 if (responseFuture.isSendRequestOK()) {

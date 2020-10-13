@@ -71,12 +71,16 @@ public class PullAPIWrapper {
         final SubscriptionData subscriptionData) {
         PullResultExt pullResultExt = (PullResultExt) pullResult;
 
+        // 消息从哪个broker拉取,并缓存
         this.updatePullFromWhichNode(mq, pullResultExt.getSuggestWhichBrokerId());
         if (PullStatus.FOUND == pullResult.getPullStatus()) {
+            // 真正拉到消息
             ByteBuffer byteBuffer = ByteBuffer.wrap(pullResultExt.getMessageBinary());
+            // 手动解码  byte[] --> List<MessageExt>
             List<MessageExt> msgList = MessageDecoder.decodes(byteBuffer);
 
             List<MessageExt> msgListFilterAgain = msgList;
+            // 订阅topic的tag和filterMode 的筛选
             if (!subscriptionData.getTagsSet().isEmpty() && !subscriptionData.isClassFilterMode()) {
                 msgListFilterAgain = new ArrayList<MessageExt>(msgList.size());
                 for (MessageExt msg : msgList) {
@@ -88,6 +92,7 @@ public class PullAPIWrapper {
                 }
             }
 
+            // 执行设置的hook
             if (this.hasHook()) {
                 FilterMessageContext filterMessageContext = new FilterMessageContext();
                 filterMessageContext.setUnitMode(unitMode);
@@ -95,7 +100,9 @@ public class PullAPIWrapper {
                 this.executeHook(filterMessageContext);
             }
 
+            // 设置消息属性
             for (MessageExt msg : msgListFilterAgain) {
+                // 事务消息
                 String traFlag = msg.getProperty(MessageConst.PROPERTY_TRANSACTION_PREPARED);
                 if (Boolean.parseBoolean(traFlag)) {
                     msg.setTransactionId(msg.getProperty(MessageConst.PROPERTY_UNIQ_CLIENT_MESSAGE_ID_KEYIDX));
@@ -107,9 +114,11 @@ public class PullAPIWrapper {
                 msg.setBrokerName(mq.getBrokerName());
             }
 
+            // 经过一系列的过滤之后的 消息
             pullResultExt.setMsgFoundList(msgListFilterAgain);
         }
 
+        // 重置之前的 byte[]
         pullResultExt.setMessageBinary(null);
 
         return pullResult;
@@ -141,23 +150,27 @@ public class PullAPIWrapper {
     }
 
     public PullResult pullKernelImpl(
-        final MessageQueue mq,
-        final String subExpression,
-        final String expressionType,
+        final MessageQueue mq, // 从哪个消息消费队列拉取消息
+        final String subExpression, // 消息过滤表达式
+        final String expressionType, // 消息表达式类型 tag/sql92
         final long subVersion,
-        final long offset,
-        final int maxNums,
-        final int sysFlag,
-        final long commitOffset,
-        final long brokerSuspendMaxTimeMillis,
-        final long timeoutMillis,
-        final CommunicationMode communicationMode,
-        final PullCallback pullCallback
+        final long offset, // 消息拉取的偏移量
+        final int maxNums, // 本次拉取的最大条数 --默认32
+        final int sysFlag, // 拉取系统标记
+        final long commitOffset, // 当前MessageQueue的消费进度(内存中的)
+        final long brokerSuspendMaxTimeMillis, // 消息拉取过程中允许broker挂起的时间
+        final long timeoutMillis, // 消息拉取超时时间
+        final CommunicationMode communicationMode, // 消息拉取模式,默认为异步拉取
+        final PullCallback pullCallback // 从broker拉取到消息后的回调方法
     ) throws MQClientException, RemotingException, MQBrokerException, InterruptedException {
+        // 查找broker的地址
+        // 在rocket mq的部署结构中,相同名称的broker构成主从结构,brokerId不一样,id为0为主
+        // 每次拉取消息之后会给出一个建议,下次从主节点还是从节点拉取消息
         FindBrokerResult findBrokerResult =
             this.mQClientFactory.findBrokerAddressInSubscribe(mq.getBrokerName(),
                 this.recalculatePullFromWhichNode(mq), false);
         if (null == findBrokerResult) {
+            // 没拿到,就从远端拿
             this.mQClientFactory.updateTopicRouteInfoFromNameServer(mq.getTopic());
             findBrokerResult =
                 this.mQClientFactory.findBrokerAddressInSubscribe(mq.getBrokerName(),
@@ -194,9 +207,12 @@ public class PullAPIWrapper {
 
             String brokerAddr = findBrokerResult.getBrokerAddr();
             if (PullSysFlag.hasClassFilterFlag(sysFlagInner)) {
+                // 如果消息为类过滤模式,则需要根据主题名称,broker地址找到注册到broker上的FilterServer地址
+                // 从FilterServer上拉取消息,否则从broker上拉取消息
                 brokerAddr = computPullFromWhichFilterServer(mq.getTopic(), brokerAddr);
             }
 
+            // 发起发送消息的请求
             PullResult pullResult = this.mQClientFactory.getMQClientAPIImpl().pullMessage(
                 brokerAddr,
                 requestHeader,
@@ -207,6 +223,7 @@ public class PullAPIWrapper {
             return pullResult;
         }
 
+        // 实在找不到还是只能抛异常
         throw new MQClientException("The broker[" + mq.getBrokerName() + "] not exist", null);
     }
 

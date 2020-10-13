@@ -316,6 +316,9 @@ public class DefaultLitePullConsumerImpl implements MQConsumerInner {
         this.offsetStore.load();
     }
 
+    /**
+     * 定时拉取TopicMessageQueues的信息比较
+     */
     private void startScheduleTask() {
         scheduledExecutorService.scheduleAtFixedRate(
             new Runnable() {

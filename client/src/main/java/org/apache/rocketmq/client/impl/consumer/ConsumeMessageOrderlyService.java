@@ -419,6 +419,7 @@ public class ConsumeMessageOrderlyService implements ConsumeMessageService {
                 return;
             }
 
+            // 在messageQueue层面先来一把锁
             final Object objLock = messageQueueLock.fetchLockObject(this.messageQueue);
             synchronized (objLock) {
                 if (MessageModel.BROADCASTING.equals(ConsumeMessageOrderlyService.this.defaultMQPushConsumerImpl.messageModel())
@@ -478,6 +479,7 @@ public class ConsumeMessageOrderlyService implements ConsumeMessageService {
                             ConsumeReturnType returnType = ConsumeReturnType.SUCCESS;
                             boolean hasException = false;
                             try {
+                                // 单线程消费的加锁
                                 this.processQueue.getLockConsume().lock();
                                 if (this.processQueue.isDropped()) {
                                     log.warn("consumeMessage, the message queue not be able to consume, because it's dropped. {}",
@@ -494,6 +496,7 @@ public class ConsumeMessageOrderlyService implements ConsumeMessageService {
                                     messageQueue);
                                 hasException = true;
                             } finally {
+                                // 加了锁不得丢掉
                                 this.processQueue.getLockConsume().unlock();
                             }
 

@@ -186,8 +186,10 @@ public class DefaultMQProducerImpl implements MQProducerInner {
                     this.defaultMQProducer.changeInstanceNameToPID();
                 }
 
+                // 创建/获取一个MQClientInstance
                 this.mQClientFactory = MQClientManager.getInstance().getOrCreateMQClientInstance(this.defaultMQProducer, rpcHook);
 
+                // 向MQClientInstance注册,将当前生产者加入到MQClientInstance管理中.
                 boolean registerOK = mQClientFactory.registerProducer(this.defaultMQProducer.getProducerGroup(), this);
                 if (!registerOK) {
                     this.serviceState = ServiceState.CREATE_JUST;
@@ -687,9 +689,11 @@ public class DefaultMQProducerImpl implements MQProducerInner {
     }
 
     private TopicPublishInfo tryToFindTopicPublishInfo(final String topic) {
+        // 缓存中是否有topic的路由信息
         TopicPublishInfo topicPublishInfo = this.topicPublishInfoTable.get(topic);
         if (null == topicPublishInfo || !topicPublishInfo.ok()) {
             this.topicPublishInfoTable.putIfAbsent(topic, new TopicPublishInfo());
+            // 从nameServer获取topic的路由信息
             this.mQClientFactory.updateTopicRouteInfoFromNameServer(topic);
             topicPublishInfo = this.topicPublishInfoTable.get(topic);
         }
@@ -703,6 +707,20 @@ public class DefaultMQProducerImpl implements MQProducerInner {
         }
     }
 
+    /**
+     * 消息发送的api核心入口
+     * @param msg 待发送的消息
+     * @param mq 消息将发送的消息队列
+     * @param communicationMode 消息的发送方式 sync async oneway
+     * @param sendCallback 异步消息回调函数
+     * @param topicPublishInfo topic路由信息
+     * @param timeout 消息发送的超时时间
+     * @return
+     * @throws MQClientException
+     * @throws RemotingException
+     * @throws MQBrokerException
+     * @throws InterruptedException
+     */
     private SendResult sendKernelImpl(final Message msg,
         final MessageQueue mq,
         final CommunicationMode communicationMode,
@@ -710,6 +728,7 @@ public class DefaultMQProducerImpl implements MQProducerInner {
         final TopicPublishInfo topicPublishInfo,
         final long timeout) throws MQClientException, RemotingException, MQBrokerException, InterruptedException {
         long beginStartTime = System.currentTimeMillis();
+        // 根据messageQueue的brokerName获取broker的网络地址
         String brokerAddr = this.mQClientFactory.findBrokerAddressInPublish(mq.getBrokerName());
         if (null == brokerAddr) {
             tryToFindTopicPublishInfo(mq.getTopic());
@@ -735,13 +754,16 @@ public class DefaultMQProducerImpl implements MQProducerInner {
 
                 int sysFlag = 0;
                 boolean msgBodyCompressed = false;
+                // 消息体默认超过4k,对消息体进行压缩
                 if (this.tryToCompressMessage(msg)) {
+                    // 设置压缩标记
                     sysFlag |= MessageSysFlag.COMPRESSED_FLAG;
                     msgBodyCompressed = true;
                 }
 
                 final String tranMsg = msg.getProperty(MessageConst.PROPERTY_TRANSACTION_PREPARED);
                 if (tranMsg != null && Boolean.parseBoolean(tranMsg)) {
+                    // 设置事务消息标记
                     sysFlag |= MessageSysFlag.TRANSACTION_PREPARED_TYPE;
                 }
 
@@ -757,6 +779,8 @@ public class DefaultMQProducerImpl implements MQProducerInner {
                     this.executeCheckForbiddenHook(checkForbiddenContext);
                 }
 
+                // 检验是否注册了消息发送的钩子函数,如果注册了,在消息发送前执行相关的增强逻辑
+                // 可以通过 DefaultMQProducer.registerSendMessageHook注册钩子处理类,可注册多个
                 if (this.hasSendMessageHook()) {
                     context = new SendMessageContext();
                     context.setProducer(this);
@@ -778,15 +802,20 @@ public class DefaultMQProducerImpl implements MQProducerInner {
                     this.executeSendMessageHookBefore(context);
                 }
 
+                // 构建消息发送的请求数据包
                 SendMessageRequestHeader requestHeader = new SendMessageRequestHeader();
                 requestHeader.setProducerGroup(this.defaultMQProducer.getProducerGroup());
                 requestHeader.setTopic(msg.getTopic());
                 requestHeader.setDefaultTopic(this.defaultMQProducer.getCreateTopicKey());
+                // 该主题下的默认队列数
                 requestHeader.setDefaultTopicQueueNums(this.defaultMQProducer.getDefaultTopicQueueNums());
+                // 队列id
                 requestHeader.setQueueId(mq.getQueueId());
                 requestHeader.setSysFlag(sysFlag);
+                // 消息发送时间
                 requestHeader.setBornTimestamp(System.currentTimeMillis());
                 requestHeader.setFlag(msg.getFlag());
+                // 消息的扩展属性
                 requestHeader.setProperties(MessageDecoder.messageProperties2String(msg.getProperties()));
                 requestHeader.setReconsumeTimes(0);
                 requestHeader.setUnitMode(this.isUnitMode());
@@ -806,6 +835,7 @@ public class DefaultMQProducerImpl implements MQProducerInner {
                 }
 
                 SendResult sendResult = null;
+                // 发送消息  同步/异步/单向
                 switch (communicationMode) {
                     case ASYNC:
                         Message tmpMessage = msg;
@@ -866,6 +896,7 @@ public class DefaultMQProducerImpl implements MQProducerInner {
                         break;
                 }
 
+                // 若注册了钩子函数,就执行after逻辑
                 if (this.hasSendMessageHook()) {
                     context.setSendResult(sendResult);
                     this.executeSendMessageHookAfter(context);

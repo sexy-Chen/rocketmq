@@ -30,6 +30,7 @@ import org.apache.rocketmq.remoting.exception.RemotingException;
 public interface MQConsumer extends MQAdmin {
     /**
      * If consuming failure,message will be send back to the brokers,and delay consuming some time
+     * 消息消费失败,重新发送到broker服务器
      */
     @Deprecated
     void sendMessageBack(final MessageExt msg, final int delayLevel) throws RemotingException,
@@ -37,6 +38,7 @@ public interface MQConsumer extends MQAdmin {
 
     /**
      * If consuming failure,message will be send back to the broker,and delay consuming some time
+     * 消息 --- 延迟级别 --- broker名称
      */
     void sendMessageBack(final MessageExt msg, final int delayLevel, final String brokerName)
         throws RemotingException, MQBrokerException, InterruptedException, MQClientException;

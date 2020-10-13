@@ -146,19 +146,24 @@ public class RebalancePushImpl extends RebalanceImpl {
             case CONSUME_FROM_LAST_OFFSET_AND_FROM_MIN_WHEN_BOOT_FIRST:
             case CONSUME_FROM_MIN_OFFSET:
             case CONSUME_FROM_MAX_OFFSET:
-            case CONSUME_FROM_LAST_OFFSET: {
+            case CONSUME_FROM_LAST_OFFSET: { // 队列最新偏移量开始消费
+                // 读取偏移量
                 long lastOffset = offsetStore.readOffset(mq, ReadOffsetType.READ_FROM_STORE);
                 if (lastOffset >= 0) {
+                    // 大于0直接返回
                     result = lastOffset;
                 }
-                // First start,no offset
+                // First start,no offset --- 表示队列刚创建
                 else if (-1 == lastOffset) {
+                    // 获取该消息队列当前最大偏移量
                     if (mq.getTopic().startsWith(MixAll.RETRY_GROUP_TOPIC_PREFIX)) {
                         result = 0L;
                     } else {
                         try {
+                            //
                             result = this.mQClientFactory.getMQAdminImpl().maxOffset(mq);
                         } catch (MQClientException e) {
+                            // <-1 表示该消息进度文件中存储了错误的偏移量,直接返回-1
                             result = -1;
                         }
                     }
@@ -167,17 +172,20 @@ public class RebalancePushImpl extends RebalanceImpl {
                 }
                 break;
             }
+            // 从头开始消费
             case CONSUME_FROM_FIRST_OFFSET: {
                 long lastOffset = offsetStore.readOffset(mq, ReadOffsetType.READ_FROM_STORE);
                 if (lastOffset >= 0) {
                     result = lastOffset;
                 } else if (-1 == lastOffset) {
+                    // == -1 直接返0
                     result = 0L;
                 } else {
                     result = -1;
                 }
                 break;
             }
+            // 从消费者启动的时间戳对应的消费进度开始消费
             case CONSUME_FROM_TIMESTAMP: {
                 long lastOffset = offsetStore.readOffset(mq, ReadOffsetType.READ_FROM_STORE);
                 if (lastOffset >= 0) {
@@ -211,6 +219,10 @@ public class RebalancePushImpl extends RebalanceImpl {
         return result;
     }
 
+    /**
+     * 将PullRequest加入到PullMessageService中,以便唤醒PullMessageService线程
+     * @param pullRequestList
+     */
     @Override
     public void dispatchPullRequest(List<PullRequest> pullRequestList) {
         for (PullRequest pullRequest : pullRequestList) {

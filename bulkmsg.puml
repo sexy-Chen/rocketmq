@@ -1,0 +1,38 @@
+@startuml
+title: 通宝群发
+client -> tb_win_server: insertAll/startAll/updateAll
+tb_win_server -> tb_win_server: 数据入库/修改,record,allmsg
+tb_win_server -> client: 执行成功
+activate BulkMsgSendTimer
+tb_win_server -> BulkMsgSendTimer
+BulkMsgSendTimer -> BulkMsgSendTimer: 查出所有微信id下1min内的任务
+BulkMsgSendTimer -> BulkMsgSendTimer: 修改所有任务状态为排队中
+BulkMsgSendTimer -> BulkMsgSendTimer: 多线程执行判断ss_msg_bulk_send topic是否由正在执行的任务
+BulkMsgSendTimer -> ss_msg_bulk_send: 当前微信号没有在执行的任务,加入到队列,修改任务状态为rocketMq
+
+activate MsgBulkSendConsumer
+ss_msg_bulk_send -> MsgBulkSendConsumer
+MsgBulkSendConsumer -> MsgBulkSendConsumer: 判断消费时任务状态是否发送改变,只有typeSending才执行
+MsgBulkSendConsumer -> MsgBulkSendConsumer: 判断消费时,是否有其他的任务在执行,有,就将当前任务的状态修改为排队中
+MsgBulkSendConsumer -> MsgBulkSendConsumer: 修改任务状态为执行中,修改失败直接返回,幂等性保证
+MsgBulkSendConsumer -> ss_msg_bulk_detail: 查询当前record任务下的第一个子任务的id并将子任务信息组装放入到ss_msg_bulk_detail topic消费
+deactivate MsgBulkSendConsumer
+activate MsgBulkDetailConsumer
+ss_msg_bulk_detail -> MsgBulkDetailConsumer
+MsgBulkDetailConsumer -> MsgBulkDetailConsumer: 重复性消费校验
+MsgBulkDetailConsumer -> MsgBulkDetailConsumer: 判断消费时任务是否已经被取消/暂停
+MsgBulkDetailConsumer -> MsgBulkDetailConsumer: 校验任务所属微信心跳是否正常
+MsgBulkDetailConsumer --> ss_msg_bulk_detail: 心跳不正常,且掉线时间与发送时间间隔不超过十分钟,重新入队列消费
+MsgBulkDetailConsumer -> MsgBulkDetailConsumer: 掉线超过十分钟,抛弃掉子任务所有record任务的所有子任务,状态修改为已过期
+MsgBulkDetailConsumer -> MsgBulkDetailConsumer: 发送消息
+MsgBulkDetailConsumer -> MsgBulkDetailConsumer: 根据发送对象是 群/人分别处理
+MsgBulkDetailConsumer -> MsgBulkDetailConsumer: 发送对象是群,内容为公告,当前登陆的微信不是群主,将公告转为普通消息发送
+MsgBulkDetailConsumer -> 基础服务: facade接口调用,发送消息
+基础服务 -> MsgBulkDetailConsumer: 根据基础服务的
+MsgBulkDetailConsumer -> MsgBulkDetailConsumer: 判断当前record任务下的子任务是否执行完,执行完了尝试拉起下一个record任务
+
+
+
+
+
+@enduml

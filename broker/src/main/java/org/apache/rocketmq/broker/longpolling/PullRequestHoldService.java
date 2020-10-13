@@ -41,6 +41,14 @@ public class PullRequestHoldService extends ServiceThread {
         this.brokerController = brokerController;
     }
 
+    /**
+     * 根据消息主题和消息队列构建key,从concurrentMap<String, ManyPullRequest> 获取topic@queueId 的ManyPullRequest
+     * 维护topic@queueId 然后将PullRequest放入ManyPullRequest,ManyPullRequest对象内部持有一个PullRequest列表
+     * 表示同一topic@queueId的累积拉取消息任务
+     * @param topic
+     * @param queueId
+     * @param pullRequest
+     */
     public void suspendPullRequest(final String topic, final int queueId, final PullRequest pullRequest) {
         String key = this.buildKey(topic, queueId);
         ManyPullRequest mpr = this.pullRequestTable.get(key);
@@ -69,6 +77,7 @@ public class PullRequestHoldService extends ServiceThread {
         while (!this.isStopped()) {
             try {
                 if (this.brokerController.getBrokerConfig().isLongPollingEnable()) {
+                    // 如果开启长轮询,每5s尝试一次,判断消息是否到达,如果没有开启,等待一秒再尝试,可通过BrokerConfig.shortPollingTimeMills修改这个等待时间
                     this.waitForRunning(5 * 1000);
                 } else {
                     this.waitForRunning(this.brokerController.getBrokerConfig().getShortPollingTimeMills());
@@ -93,6 +102,10 @@ public class PullRequestHoldService extends ServiceThread {
         return PullRequestHoldService.class.getSimpleName();
     }
 
+    /**
+     * 遍历拉取任务表,根据主题与队列获取消息消费队列的最大偏移量,如果该偏移量大于待拉取的偏移量
+     * 则有新消息到达,调用notifyMessageArriving触发消息拉取
+     */
     private void checkHoldRequest() {
         for (String key : this.pullRequestTable.keySet()) {
             String[] kArray = key.split(TOPIC_QUEUEID_SEPARATOR);
@@ -128,6 +141,7 @@ public class PullRequestHoldService extends ServiceThread {
                         newestOffset = this.brokerController.getMessageStore().getMaxOffsetInQueue(topic, queueId);
                     }
 
+                    // 如果队列消息的最大偏移量>待拉取的偏移量,如果消息匹配,调用 executeRequestWhenWakeup 将消息返回给客户端,否则等待下一次尝试
                     if (newestOffset > request.getPullFromThisOffset()) {
                         boolean match = request.getMessageFilter().isMatchedByConsumeQueue(tagsCode,
                             new ConsumeQueueExt.CqExtUnit(tagsCode, msgStoreTime, filterBitMap));
@@ -147,6 +161,7 @@ public class PullRequestHoldService extends ServiceThread {
                         }
                     }
 
+                    // 挂起时间超时,不再等待,向客户端返回没找到消息
                     if (System.currentTimeMillis() >= (request.getSuspendTimestamp() + request.getTimeoutMillis())) {
                         try {
                             this.brokerController.getPullMessageProcessor().executeRequestWhenWakeup(request.getClientChannel(),

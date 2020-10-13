@@ -78,6 +78,13 @@ public class PullMessageProcessor extends AsyncNettyRequestProcessor implements 
         this.brokerController = brokerController;
     }
 
+    /**
+     * 消息服务端组装消息,客户端发起pullMessage请求,在这边处理
+     * @param ctx
+     * @param request
+     * @return
+     * @throws RemotingCommandException
+     */
     @Override
     public RemotingCommand processRequest(final ChannelHandlerContext ctx,
         RemotingCommand request) throws RemotingCommandException {
@@ -89,6 +96,19 @@ public class PullMessageProcessor extends AsyncNettyRequestProcessor implements 
         return false;
     }
 
+    /**
+     * 服务端处理长链接请求
+     * @param channel 网络通道
+     * @param request 消息拉取请求
+     * @param brokerAllowSuspend broker端是否支持挂起,处理消息拉取时默认传入true,当没找到消息时挂起,
+     * 将响应的对象设置成null,hasSuspendFile参数在拉取消息时构建拉取标记
+     * false表示未找到消息,直接返回客户端消息未找到
+     * 默认支持挂起,挂起的超时时间,PUSH为15秒,PULL为20s、rocketMq由两个线程共同来完成
+     *                           1、PullRequestHoldService 每5s重试一次
+     *                           2、DefaultMessageStore#ReputMessageService,每处理一次重新拉取,休眠一秒,继续下次检查
+     * @return
+     * @throws RemotingCommandException
+     */
     private RemotingCommand processRequest(final Channel channel, RemotingCommand request, boolean brokerAllowSuspend)
         throws RemotingCommandException {
         RemotingCommand response = RemotingCommand.createResponseCommand(PullMessageResponseHeader.class);
@@ -236,10 +256,12 @@ public class PullMessageProcessor extends AsyncNettyRequestProcessor implements 
                 this.brokerController.getConsumerFilterManager());
         }
 
+        // 调用MessageStore.getMessage查找消息
         final GetMessageResult getMessageResult =
             this.brokerController.getMessageStore().getMessage(requestHeader.getConsumerGroup(), requestHeader.getTopic(),
                 requestHeader.getQueueId(), requestHeader.getQueueOffset(), requestHeader.getMaxMsgNums(), messageFilter);
         if (getMessageResult != null) {
+            // 根据返回的pullMessageResult填充responseHeader的nextBegionOffset,minOffset,maxOffset
             response.setRemark(getMessageResult.getStatus().name());
             responseHeader.setNextBeginOffset(getMessageResult.getNextBeginOffset());
             responseHeader.setMinOffset(getMessageResult.getMinOffset());
@@ -461,6 +483,7 @@ public class PullMessageProcessor extends AsyncNettyRequestProcessor implements 
             response.setRemark("store getMessage return null");
         }
 
+        // 如果commitLog标记可用并且当前节点为主节点,更新消息消费进度
         boolean storeOffsetEnable = brokerAllowSuspend;
         storeOffsetEnable = storeOffsetEnable && hasCommitOffsetFlag;
         storeOffsetEnable = storeOffsetEnable
@@ -553,6 +576,7 @@ public class PullMessageProcessor extends AsyncNettyRequestProcessor implements 
             @Override
             public void run() {
                 try {
+                    // 若设置brokerAllowSuspend为false,表示不支持拉取线程挂起,不再等待,直接告诉客户端本次消息为找到消息
                     final RemotingCommand response = PullMessageProcessor.this.processRequest(channel, request, false);
 
                     if (response != null) {

@@ -32,6 +32,9 @@ public class RebalanceService extends ServiceThread {
         this.mqClientFactory = mqClientFactory;
     }
 
+    /**
+     * 线程默认20s执行一次 -Drockmq.client.rebalance.waitInterval = xxx 修改默认值
+     */
     @Override
     public void run() {
         log.info(this.getServiceName() + " service started");

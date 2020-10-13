@@ -29,12 +29,15 @@ public abstract class ConfigManager {
     public boolean load() {
         String fileName = null;
         try {
+            // 子类实现configFilePath() 方法查找,解析出文件中的信息
             fileName = this.configFilePath();
             String jsonString = MixAll.file2String(fileName);
 
             if (null == jsonString || jsonString.length() == 0) {
+                // 尝试加载备份文件  fileName.bak
                 return this.loadBak();
             } else {
+                // 找到文件,解码得到配置信息
                 this.decode(jsonString);
                 log.info("load " + fileName + " OK");
                 return true;

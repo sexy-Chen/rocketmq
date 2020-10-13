@@ -25,6 +25,10 @@ import org.apache.rocketmq.logging.InternalLoggerFactory;
 import org.apache.rocketmq.store.config.BrokerRole;
 import org.apache.rocketmq.store.config.StorePathConfigHelper;
 
+/**
+ * 相当于CommitLog关于消息消费的 索引文件  --consumeQueue两级目录,第一级目录为消费主题 第二级目录为主题的消息队列
+ * 当消息到达commitLog文件之后,由专门的线程产生消息转发任务,从而构建消息队列文件和索引文件
+ */
 public class ConsumeQueue {
     private static final InternalLogger log = InternalLoggerFactory.getLogger(LoggerName.STORE_LOGGER_NAME);
 
@@ -155,6 +159,7 @@ public class ConsumeQueue {
     public long getOffsetInQueueByTime(final long timestamp) {
         MappedFile mappedFile = this.mappedFileQueue.getMappedFileByTime(timestamp);
         if (mappedFile != null) {
+            // 二分查找
             long offset = 0;
             int low = minLogicOffset > mappedFile.getFileFromOffset() ? (int) (minLogicOffset - mappedFile.getFileFromOffset()) : 0;
             int high = 0;
@@ -430,12 +435,14 @@ public class ConsumeQueue {
             return true;
         }
 
+        // 将消息偏移量、消息长度、tag hashcode 写入到byteBuffer
         this.byteBufferIndex.flip();
         this.byteBufferIndex.limit(CQ_STORE_UNIT_SIZE);
         this.byteBufferIndex.putLong(offset);
         this.byteBufferIndex.putInt(size);
         this.byteBufferIndex.putLong(tagsCode);
 
+        // 根据consumeQueueOffset计算consumeQueue中的物理地址
         final long expectLogicOffset = cqOffset * CQ_STORE_UNIT_SIZE;
 
         MappedFile mappedFile = this.mappedFileQueue.getLastMappedFile(expectLogicOffset);
@@ -471,6 +478,7 @@ public class ConsumeQueue {
                 }
             }
             this.maxPhysicOffset = offset + size;
+            // 将内容追加到consumeQueue的内存映射文件(此处没有刷盘) -- consume的刷盘,只有异步线程操作
             return mappedFile.appendMessage(this.byteBufferIndex.array());
         }
         return false;
@@ -488,8 +496,14 @@ public class ConsumeQueue {
         }
     }
 
+    /**
+     * 根据startIndex获取消息队列条目
+     * @param startIndex
+     * @return
+     */
     public SelectMappedBufferResult getIndexBuffer(final long startIndex) {
         int mappedFileSize = this.mappedFileSize;
+        // 计算得到consumeQueue中的物理偏移量
         long offset = startIndex * CQ_STORE_UNIT_SIZE;
         if (offset >= this.getMinLogicOffset()) {
             MappedFile mappedFile = this.mappedFileQueue.findMappedFileByOffset(offset);

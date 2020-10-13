@@ -40,19 +40,29 @@ public abstract class ReferenceResource {
         return this.available;
     }
 
+    /**
+     * 关闭MappedFile
+     * @param intervalForcibly 拒绝被销毁的最大存活时间
+     */
     public void shutdown(final long intervalForcibly) {
         if (this.available) {
             this.available = false;
             this.firstShutdownTimestamp = System.currentTimeMillis();
+            // 释放资源
             this.release();
         } else if (this.getRefCount() > 0) {
+            // 引用次数小于0的时候才会释放资源
             if ((System.currentTimeMillis() - this.firstShutdownTimestamp) >= intervalForcibly) {
+                // 超过了最大存活时间 没执行一次,计数 -1000,小于0时直接释放资源
                 this.refCount.set(-1000 - this.getRefCount());
                 this.release();
             }
         }
     }
 
+    /**
+     * 引用计数 -1, 若引用计数 < 0, cleanUp()
+     */
     public void release() {
         long value = this.refCount.decrementAndGet();
         if (value > 0)
@@ -70,6 +80,11 @@ public abstract class ReferenceResource {
 
     public abstract boolean cleanup(final long currentRef);
 
+    /**
+     * 判断是否清理完成,引用计数 < 0 并且cleanupOver = true
+     * release将MappedByteBuffer资源释放之后为true
+     * @return
+     */
     public boolean isCleanupOver() {
         return this.refCount.get() <= 0 && this.cleanupOver;
     }
