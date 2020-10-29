@@ -100,6 +100,7 @@ public class HAConnection {
         public ReadSocketService(final SocketChannel socketChannel) throws IOException {
             this.selector = RemotingUtil.openSelector();
             this.socketChannel = socketChannel;
+            // 监听读事件
             this.socketChannel.register(this.selector, SelectionKey.OP_READ);
             this.setDaemon(true);
         }
@@ -225,6 +226,7 @@ public class HAConnection {
         public WriteSocketService(final SocketChannel socketChannel) throws IOException {
             this.selector = RemotingUtil.openSelector();
             this.socketChannel = socketChannel;
+            // channel注册写事件
             this.socketChannel.register(this.selector, SelectionKey.OP_WRITE);
             this.setDaemon(true);
         }
@@ -235,6 +237,7 @@ public class HAConnection {
 
             while (!this.isStopped()) {
                 try {
+                    // seletor选择器没有事件时的同步等待 1s
                     this.selector.select(1000);
 
                     if (-1 == HAConnection.this.slaveRequestOffset) {
@@ -359,9 +362,14 @@ public class HAConnection {
             HAConnection.log.info(this.getServiceName() + " service end");
         }
 
+        /**
+         * 向slave端写数据
+         * @return
+         * @throws Exception
+         */
         private boolean transferData() throws Exception {
             int writeSizeZeroTimes = 0;
-            // Write Header
+            // Write Header 写消息头
             while (this.byteBufferHeader.hasRemaining()) {
                 int writeSize = this.socketChannel.write(this.byteBufferHeader);
                 if (writeSize > 0) {
@@ -382,7 +390,7 @@ public class HAConnection {
 
             writeSizeZeroTimes = 0;
 
-            // Write Body
+            // Write Body 写消息体
             if (!this.byteBufferHeader.hasRemaining()) {
                 while (this.selectMappedBufferResult.getByteBuffer().hasRemaining()) {
                     int writeSize = this.socketChannel.write(this.selectMappedBufferResult.getByteBuffer());

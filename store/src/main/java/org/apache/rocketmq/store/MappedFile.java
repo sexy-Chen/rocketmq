@@ -170,6 +170,7 @@ public class MappedFile extends ReferenceResource {
     public void init(final String fileName, final int fileSize,
         final TransientStorePool transientStorePool) throws IOException {
         init(fileName, fileSize);
+        // writeBuffer从transientStorePool中获取
         this.writeBuffer = transientStorePool.borrowBuffer();
         this.transientStorePool = transientStorePool;
     }
@@ -188,7 +189,7 @@ public class MappedFile extends ReferenceResource {
         try {
             // 创建读写文件通道
             this.fileChannel = new RandomAccessFile(this.file, "rw").getChannel();
-            // 将文件内容,通过NIO的内存映射Buffer将文件映射到内存中
+            // 将文件内容,通过NIO的内存映射Buffer将文件映射到内存中  ---就是一份堆外内存
             this.mappedByteBuffer = this.fileChannel.map(MapMode.READ_WRITE, 0, fileSize);
             TOTAL_MAPPED_VIRTUAL_MEMORY.addAndGet(fileSize);
             TOTAL_MAPPED_FILES.incrementAndGet();
@@ -313,7 +314,7 @@ public class MappedFile extends ReferenceResource {
                 try {
                     //We only append data to fileChannel or mappedByteBuffer, never both.
                     if (writeBuffer != null || this.fileChannel.position() != 0) {
-                        // commit到了了fileChannel中
+                        // commit到了fileChannel中,force通知系统往磁盘上刷
                         this.fileChannel.force(false);
                     } else {
                         this.mappedByteBuffer.force();
@@ -333,6 +334,25 @@ public class MappedFile extends ReferenceResource {
         return this.getFlushedPosition();
     }
 
+    @Override
+    public long getRefCount() {
+        return super.getRefCount();
+    }
+
+    @Override
+    public synchronized boolean hold() {
+        return super.hold();
+    }
+
+    public boolean isAvailable() {
+        return super.isAvailable();
+    }
+
+    @Override
+    public boolean isCleanupOver() {
+        return super.isCleanupOver();
+    }
+
     /**
      * commitLeastPages本次提交的最小页数,待提交数据不够commitLeastPages不会提交,放在下次提交
      * @param commitLeastPages
@@ -343,6 +363,7 @@ public class MappedFile extends ReferenceResource {
             //no need to commit data to file channel, so just regard wrotePosition as committedPosition.
             return this.wrotePosition.get();
         }
+        // 待提交的数据未达到commitLeastPages,不执行提交操作了
         if (this.isAbleToCommit(commitLeastPages)) {
             if (this.hold()) {
                 commit0(commitLeastPages);
@@ -358,6 +379,7 @@ public class MappedFile extends ReferenceResource {
             this.writeBuffer = null;
         }
 
+        //
         return this.committedPosition.get();
     }
 
@@ -441,6 +463,7 @@ public class MappedFile extends ReferenceResource {
         int readPosition = getReadPosition();
         if ((pos + size) <= readPosition) {
             if (this.hold()) {
+                // 读数据是从mappedByteBuffer读取的
                 ByteBuffer byteBuffer = this.mappedByteBuffer.slice();
                 byteBuffer.position(pos);
                 ByteBuffer byteBufferNew = byteBuffer.slice();
@@ -560,8 +583,10 @@ public class MappedFile extends ReferenceResource {
         int flush = 0;
         long time = System.currentTimeMillis();
         for (int i = 0, j = 0; i < this.fileSize; i += MappedFile.OS_PAGE_SIZE, j++) {
+            // 预热, 对每个字节填充(byte)0
             byteBuffer.put(i, (byte) 0);
             // force flush when flush disk type is sync
+            // 同步刷盘 分页把写好的buffer刷到硬盘上
             if (type == FlushDiskType.SYNC_FLUSH) {
                 if ((i / OS_PAGE_SIZE) - (flush / OS_PAGE_SIZE) >= pages) {
                     flush = i;
@@ -617,6 +642,9 @@ public class MappedFile extends ReferenceResource {
         this.firstCreateInQueue = firstCreateInQueue;
     }
 
+    /**
+     * 锁定内存
+     */
     public void mlock() {
         final long beginTime = System.currentTimeMillis();
         final long address = ((DirectBuffer) (this.mappedByteBuffer)).address();
@@ -632,6 +660,9 @@ public class MappedFile extends ReferenceResource {
         }
     }
 
+    /**
+     * 释放这个锁
+     */
     public void munlock() {
         final long beginTime = System.currentTimeMillis();
         final long address = ((DirectBuffer) (this.mappedByteBuffer)).address();

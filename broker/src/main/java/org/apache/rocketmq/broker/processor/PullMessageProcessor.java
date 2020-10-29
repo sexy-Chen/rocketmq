@@ -261,7 +261,7 @@ public class PullMessageProcessor extends AsyncNettyRequestProcessor implements 
             this.brokerController.getMessageStore().getMessage(requestHeader.getConsumerGroup(), requestHeader.getTopic(),
                 requestHeader.getQueueId(), requestHeader.getQueueOffset(), requestHeader.getMaxMsgNums(), messageFilter);
         if (getMessageResult != null) {
-            // 根据返回的pullMessageResult填充responseHeader的nextBegionOffset,minOffset,maxOffset
+            // 根据返回的pullMessageResult填充responseHeader的nextRegionOffset,minOffset,maxOffset
             response.setRemark(getMessageResult.getStatus().name());
             responseHeader.setNextBeginOffset(getMessageResult.getNextBeginOffset());
             responseHeader.setMinOffset(getMessageResult.getMinOffset());
@@ -605,6 +605,7 @@ public class PullMessageProcessor extends AsyncNettyRequestProcessor implements 
                 }
             }
         };
+        // 提交到这个线程池中执行
         this.brokerController.getPullMessageExecutor().submit(new RequestTask(run, channel, request));
     }
 

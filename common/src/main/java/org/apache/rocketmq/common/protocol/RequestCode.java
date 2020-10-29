@@ -17,6 +17,10 @@
 
 package org.apache.rocketmq.common.protocol;
 
+/**
+ * 定义不同的请求类型
+ * 底层netty通信模块收到消息后,通过这些标识确定是什么请求
+ */
 public class RequestCode {
 
     public static final int SEND_MESSAGE = 10;

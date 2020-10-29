@@ -1,7 +1,0 @@
-@startuml
-PullMessageService -> PullMessageService: pullRequestQueue 拿一个PullRequest
-PullBack -> ConsumeMessageConcurrentlyService: submitConsumeRequest 提交消费请求
-ConsumeMessageConcurrentlyService -> ConsumeRequest:this.consumeExecutor.submit(consumeRequest) 提交任务到消费线程池
-ConsumeRequest -> ConsumeRequest: listener.consumeMessage(Collections.unmodifiableList(msgs), context) 回调自己写的消费方法
-
-@enduml

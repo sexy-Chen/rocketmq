@@ -559,6 +559,11 @@ public class CommitLog {
         return beginTimeInLock;
     }
 
+    /**
+     * 异步
+     * @param msg
+     * @return
+     */
     public CompletableFuture<PutMessageResult> asyncPutMessage(final MessageExtBrokerInner msg) {
         // Set the storage time
         msg.setStoreTimestamp(System.currentTimeMillis());
@@ -599,6 +604,7 @@ public class CommitLog {
         MappedFile unlockMappedFile = null;
         MappedFile mappedFile = this.mappedFileQueue.getLastMappedFile();
 
+        // lock,串行化
         putMessageLock.lock(); //spin or ReentrantLock ,depending on store config
         try {
             long beginLockTimestamp = this.defaultMessageStore.getSystemClock().now();
@@ -609,6 +615,7 @@ public class CommitLog {
             msg.setStoreTimestamp(beginLockTimestamp);
 
             if (null == mappedFile || mappedFile.isFull()) {
+                // 重新创建一个mappedFile
                 mappedFile = this.mappedFileQueue.getLastMappedFile(0); // Mark: NewFile may be cause noise
             }
             if (null == mappedFile) {
@@ -665,7 +672,9 @@ public class CommitLog {
         storeStatsService.getSinglePutMessageTopicTimesTotal(msg.getTopic()).incrementAndGet();
         storeStatsService.getSinglePutMessageTopicSizeTotal(topic).addAndGet(result.getWroteBytes());
 
+        // 异步提交刷盘请求
         CompletableFuture<PutMessageStatus> flushResultFuture = submitFlushRequest(result, putMessageResult, msg);
+        // 异步提交复制请求 ---HA
         CompletableFuture<PutMessageStatus> replicaResultFuture = submitReplicaRequest(result, putMessageResult, msg);
         return flushResultFuture.thenCombine(replicaResultFuture, (flushStatus, replicaStatus) -> {
             if (flushStatus != PutMessageStatus.PUT_OK) {
@@ -832,7 +841,7 @@ public class CommitLog {
         MappedFile unlockMappedFile = null;
         MappedFile mappedFile = this.mappedFileQueue.getLastMappedFile();
 
-        // 消息写入commitLog之前,会先申请锁 ---- 保证消息存储到commitLog文件中是串行的
+        // 消息写入之前,会先申请锁 ---- 保证消息存储到commitLog文件中是串行的
         putMessageLock.lock(); //spin or ReentrantLock ,depending on store config
         try {
             long beginLockTimestamp = this.defaultMessageStore.getSystemClock().now();
@@ -943,6 +952,7 @@ public class CommitLog {
         if (BrokerRole.SYNC_MASTER == this.defaultMessageStore.getMessageStoreConfig().getBrokerRole()) {
             HAService service = this.defaultMessageStore.getHaService();
             if (messageExt.isWaitStoreMsgOK()) {
+                // 校验salve是否可用
                 if (service.isSlaveOK(result.getWroteBytes() + result.getWroteOffset())) {
                     GroupCommitRequest request = new GroupCommitRequest(result.getWroteOffset() + result.getWroteBytes(),
                             this.defaultMessageStore.getMessageStoreConfig().getSyncFlushTimeout());
@@ -955,6 +965,7 @@ public class CommitLog {
                 }
             }
         }
+        // 异步 ---- 直接先把OK返出去,其实啥都没做
         return CompletableFuture.completedFuture(PutMessageStatus.PUT_OK);
     }
 
@@ -975,6 +986,7 @@ public class CommitLog {
                 CompletableFuture<PutMessageStatus> flushOkFuture = request.future();
                 PutMessageStatus flushStatus = null;
                 try {
+                    // 同步等待
                     flushStatus = flushOkFuture.get(this.defaultMessageStore.getMessageStoreConfig().getSyncFlushTimeout(),
                             TimeUnit.MILLISECONDS);
                 } catch (InterruptedException | ExecutionException | TimeoutException e) {
@@ -991,6 +1003,7 @@ public class CommitLog {
         }
         // Asynchronous flush
         else {
+            // 是否开启堆外内存池
             if (!this.defaultMessageStore.getMessageStoreConfig().isTransientStorePoolEnable()) {
                 flushCommitLogService.wakeup();
             } else {
@@ -1273,10 +1286,13 @@ public class CommitLog {
         public void run() {
             CommitLog.log.info(this.getServiceName() + " service started");
             while (!this.isStopped()) {
+                // 线程间隔时间,默认是200ms
                 int interval = CommitLog.this.defaultMessageStore.getMessageStoreConfig().getCommitIntervalCommitLog();
 
+                // 一次提交需要最少的页数,如果不够,跳过本次提交
                 int commitDataLeastPages = CommitLog.this.defaultMessageStore.getMessageStoreConfig().getCommitCommitLogLeastPages();
 
+                // 两次真实提交的最大时间间隔,默认200ms
                 int commitDataThoroughInterval =
                     CommitLog.this.defaultMessageStore.getMessageStoreConfig().getCommitCommitLogThoroughInterval();
 
@@ -1287,8 +1303,10 @@ public class CommitLog {
                 }
 
                 try {
+                    // 将待提交的数据提交到物理文件的内存映射内存区
                     boolean result = CommitLog.this.mappedFileQueue.commit(commitDataLeastPages);
                     long end = System.currentTimeMillis();
+                    // commit成功了result = false
                     if (!result) {
                         this.lastCommitTimestamp = end; // result = false means some data committed.
                         //now wake up flush thread.
@@ -1313,6 +1331,9 @@ public class CommitLog {
         }
     }
 
+    /**
+     * 刷盘线程服务
+     */
     class FlushRealTimeService extends FlushCommitLogService {
         private long lastFlushTimestamp = 0;
         private long printTimes = 0;
@@ -1341,6 +1362,7 @@ public class CommitLog {
 
                 try {
                     if (flushCommitLogTimed) {
+                        // 等待指定时间,再刷
                         Thread.sleep(interval);
                     } else {
                         this.waitForRunning(interval);
@@ -1351,6 +1373,7 @@ public class CommitLog {
                     }
 
                     long begin = System.currentTimeMillis();
+                    // 刷盘
                     CommitLog.this.mappedFileQueue.flush(flushPhysicQueueLeastPages);
                     long storeTimestamp = CommitLog.this.mappedFileQueue.getStoreTimestamp();
                     if (storeTimestamp > 0) {
@@ -1395,6 +1418,7 @@ public class CommitLog {
     }
 
     public static class GroupCommitRequest {
+        // 刷盘点偏移量
         private final long nextOffset;
         private CompletableFuture<PutMessageStatus> flushOKFuture = new CompletableFuture<>();
         private final long startTimestamp = System.currentTimeMillis();
@@ -1414,6 +1438,10 @@ public class CommitLog {
             return nextOffset;
         }
 
+        /**
+         * 刷盘完了通知消费线程
+         * @param putMessageStatus
+         */
         public void wakeupCustomer(final PutMessageStatus putMessageStatus) {
             this.flushOKFuture.complete(putMessageStatus);
         }
@@ -1467,6 +1495,7 @@ public class CommitLog {
                         CommitLog.this.defaultMessageStore.getStoreCheckpoint().setPhysicMsgTimestamp(storeTimestamp);
                     }
 
+                    // 清空当前使用的读List数据,清空之后方便后面交换读写List重新使用
                     this.requestsRead.clear();
                 } else {
                     // Because of individual messages is set to not sync flush, it
@@ -1481,6 +1510,7 @@ public class CommitLog {
 
             while (!this.isStopped()) {
                 try {
+                    // 判断是否有需要执行的任务,没有就等待10ms,有就直接开始执行doCommit,不管有没有都会去交互读写list
                     this.waitForRunning(10);
                     this.doCommit();
                 } catch (Exception e) {
@@ -1489,7 +1519,7 @@ public class CommitLog {
             }
 
             // Under normal circumstances shutdown, wait for the arrival of the
-            // request, and then flush
+            // request, and then flush 正常情况关机,会等待10ms看是否有刷盘请求过来,如果有,就执行刷盘
             try {
                 Thread.sleep(10);
             } catch (InterruptedException e) {
@@ -1497,6 +1527,7 @@ public class CommitLog {
             }
 
             synchronized (this) {
+                // 交换读写list
                 this.swapRequests();
             }
 

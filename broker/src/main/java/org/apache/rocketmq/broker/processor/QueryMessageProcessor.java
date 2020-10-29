@@ -54,6 +54,7 @@ public class QueryMessageProcessor extends AsyncNettyRequestProcessor implements
         switch (request.getCode()) {
             case RequestCode.QUERY_MESSAGE:
                 return this.queryMessage(ctx, request);
+            // 通过ID查询消息
             case RequestCode.VIEW_MESSAGE_BY_ID:
                 return this.viewMessageById(ctx, request);
             default:

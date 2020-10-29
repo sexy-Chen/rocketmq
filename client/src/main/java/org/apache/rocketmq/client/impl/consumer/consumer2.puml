@@ -1,0 +1,22 @@
+@startuml
+consumer -> consumer: 校验当前mq是否可用\n不可用延时拉取
+consumer -> consumer: 消息拉取流控
+consumer -> consumer: this.rebalanceImpl.getSubscriptionInner()\n.get(pullRequest.getMessageQueue().getTopic())\n订阅消息负载均衡
+consumer -> PullCallback: PullCallback pullCallback = new PullCallback() {...}\n注册结果回调函数
+PullCallback -> PullCallback: onSuccess更新下一次要拉取的偏移量
+PullCallback -> PullCallback: DefaultMQPushConsumerImpl.this.executePullRequestImmediately(pullRequest)\n拉取或者过滤之后的消息为空,马上发起一次请求再次拉取
+PullCallback -> PullCallback: processQueue.putMessage(pullResult.getMsgFoundList())\n拉取到的消息放到processQueue的msgTreeMap中,之后消费者都是消费这个队列
+PullCallback -> ConsumeMessageConcurrentlyService: DefaultMQPushConsumerImpl.this.consumeMessageService.submitConsumeRequest()
+ConsumeMessageConcurrentlyService -> consumeExecutor: this.consumeExecutor.submit(...)\n控制消息量并提交线程池
+consumeExecutor -> ConsumeRequest: ConsumeMessageConcurrentlyService.this.defaultMQPushConsumerImpl\n.executeHookBefore(consumeMessageContext)\n消费钩子函数
+ConsumeRequest -> ConsumeRequest: status = listener.consumeMessage(Collections.unmodifiableList(msgs), context)\n消费业务代码
+consumer -> PullAPIWrapper: this.pullAPIWrapper.pullKernelImpl(...)
+PullAPIWrapper -> PullAPIWrapper: 获取broker地址
+PullAPIWrapper -> PullAPIWrapper: 组装请求的requestHeader
+PullAPIWrapper -> MQClientAPIImpl: this.mQClientFactory.getMQClientAPIImpl().pullMessage
+MQClientAPIImpl -> MQClientAPIImpl: RemotingCommand.createRequestCommand(RequestCode.PULL_MESSAGE, requestHeader)\n拼装netty的socket请求
+MQClientAPIImpl -> MQBroker: this.remotingClient.invokeSync(addr, request, timeoutMillis)\n发起请求(以同步发送为例)
+MQClientAPIImpl -> MQClientAPIImpl: this.processPullResponse(response)处理结果
+
+
+@enduml

@@ -214,6 +214,7 @@ public class HAService {
 
         /**
          * {@inheritDoc}
+         * HAConnection启动的时候会启动master向salve的写实现类 和 master读取salve请求数据的读实现类
          */
         @Override
         public void run() {
@@ -223,10 +224,12 @@ public class HAService {
                 try {
                     // 处理就绪时间
                     this.selector.select(1000);
+                    // selected其实是到来的事件
                     Set<SelectionKey> selected = this.selector.selectedKeys();
 
                     if (selected != null) {
                         for (SelectionKey k : selected) {
+                            // 拿到连接事件
                             if ((k.readyOps() & SelectionKey.OP_ACCEPT) != 0) {
                                 // 拿到客户端的channel
                                 SocketChannel sc = ((ServerSocketChannel) k.channel()).accept();
@@ -250,6 +253,7 @@ public class HAService {
                             }
                         }
 
+                        // 处理完这些事件时候,清理掉
                         selected.clear();
                     }
                 } catch (Exception e) {
@@ -302,7 +306,7 @@ public class HAService {
             synchronized (this.requestsRead) {
                 if (!this.requestsRead.isEmpty()) {
                     for (CommitLog.GroupCommitRequest req : this.requestsRead) {
-                        // salve中已经成功复制的的最大偏移量是否大于消息生产者发送消息后消息服务器返回下一条消息的起始偏移量
+                        // salve中已经成功复制的的最大偏移量是否大于等于消息生产者发送消息后消息服务器返回下一条消息的起始偏移量
                         // 如果是,表示主从同步完成,唤醒消息发送线程,否则等1s再次判断 每个任务在一批任务中循环判断5次
                         boolean transferOK = HAService.this.push2SlaveMaxOffset.get() >= req.getNextOffset();
                         long waitUntilWhen = HAService.this.defaultMessageStore.getSystemClock().now()
@@ -606,6 +610,7 @@ public class HAService {
         public void run() {
             log.info(this.getServiceName() + " service started");
 
+            // client经过校验不断向服务端发送拉取请求并上报已经同步的偏移量
             while (!this.isStopped()) {
                 try {
                     if (this.connectMaster()) {

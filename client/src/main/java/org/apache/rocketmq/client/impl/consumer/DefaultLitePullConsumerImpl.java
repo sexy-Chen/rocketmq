@@ -673,6 +673,9 @@ public class DefaultLitePullConsumerImpl implements MQConsumerInner {
         return this.mQClientFactory.getMQAdminImpl().searchOffset(mq, timestamp);
     }
 
+    /**
+     * 拉模式向broker端拉取消息
+     */
     public class PullTaskImpl implements Runnable {
         private final MessageQueue messageQueue;
         private volatile boolean cancelled = false;
@@ -751,7 +754,8 @@ public class DefaultLitePullConsumerImpl implements MQConsumerInner {
                         subscriptionData = FilterAPI.buildSubscriptionData(defaultLitePullConsumer.getConsumerGroup(),
                             topic, SubscriptionData.SUB_ALL);
                     }
-                    
+
+                    // 拉取消息的核心
                     PullResult pullResult = pull(messageQueue, subscriptionData, offset, defaultLitePullConsumer.getPullBatchSize());
 
                     switch (pullResult.getPullStatus()) {
@@ -759,7 +763,9 @@ public class DefaultLitePullConsumerImpl implements MQConsumerInner {
                             final Object objLock = messageQueueLock.fetchLockObject(messageQueue);
                             synchronized (objLock) {
                                 if (pullResult.getMsgFoundList() != null && !pullResult.getMsgFoundList().isEmpty() && assignedMessageQueue.getSeekOffset(messageQueue) == -1) {
+                                    // 放到processQueue
                                     processQueue.putMessage(pullResult.getMsgFoundList());
+                                    // 消费线程池
                                     submitConsumeRequest(new ConsumeRequest(pullResult.getMsgFoundList(), messageQueue, processQueue));
                                 }
                             }

@@ -468,18 +468,18 @@ public class DefaultMQPushConsumerImpl implements MQConsumerInner {
         try {
             // pull的核心实现 --与服务端交互
             this.pullAPIWrapper.pullKernelImpl(
-                pullRequest.getMessageQueue(),
-                subExpression,
-                subscriptionData.getExpressionType(),
+                pullRequest.getMessageQueue(), // 从哪个消息队列拉取消息
+                subExpression, // 消息过滤表达式
+                subscriptionData.getExpressionType(), // 表达式类型
                 subscriptionData.getSubVersion(),
-                pullRequest.getNextOffset(),
-                this.defaultMQPushConsumer.getPullBatchSize(),
+                pullRequest.getNextOffset(), // 拉取消息的偏移量
+                this.defaultMQPushConsumer.getPullBatchSize(), // 拉取数量
                 sysFlag,
-                commitOffsetValue,
-                BROKER_SUSPEND_MAX_TIME_MILLIS,
-                CONSUMER_TIMEOUT_MILLIS_WHEN_SUSPEND,
-                CommunicationMode.ASYNC,
-                pullCallback
+                commitOffsetValue, // 当前messageQueue的消费进度(内存中)
+                BROKER_SUSPEND_MAX_TIME_MILLIS, // 消费过程中允许broker挂起的时间
+                CONSUMER_TIMEOUT_MILLIS_WHEN_SUSPEND, // 消息过期时间
+                CommunicationMode.ASYNC, // 异步拉取
+                pullCallback // 拉取到消息之后的回调方法
             );
         } catch (Exception e) {
             log.error("pullKernelImpl exception", e);
@@ -896,6 +896,7 @@ public class DefaultMQPushConsumerImpl implements MQConsumerInner {
                     break;
                 case CLUSTERING:
                     final String retryTopic = MixAll.getRetryTopic(this.defaultMQPushConsumer.getConsumerGroup());
+                    // 订阅重试队列
                     SubscriptionData subscriptionData = FilterAPI.buildSubscriptionData(this.defaultMQPushConsumer.getConsumerGroup(),
                         retryTopic, SubscriptionData.SUB_ALL);
                     this.rebalanceImpl.getSubscriptionInner().put(retryTopic, subscriptionData);
